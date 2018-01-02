@@ -2,7 +2,9 @@
 
 namespace pc\yii2\oauth2server;
 
-use \Yii;
+use ReflectionClass;
+use Yii;
+use yii\base\InvalidConfigException;
 use yii\i18n\PhpMessageSource;
 
 /**
@@ -30,8 +32,6 @@ use yii\i18n\PhpMessageSource;
  */
 class Module extends \yii\base\Module
 {
-    const VERSION = '2.0.0';
-    
     /**
      * @var array Model's map
      */
@@ -53,50 +53,53 @@ class Module extends \yii\base\Module
     public $tokenParamName;
     
     /**
-     * @var type max access lifetime
+     * @var int max access lifetime
      */
     public $tokenAccessLifetime;
-    
+
     /**
      * @inheritdoc
+     * @throws \yii\base\InvalidConfigException
      */
     public function init()
     {
         parent::init();
         $this->registerTranslations();
     }
-    
+
     /**
      * Gets Oauth2 Server
-     * 
-     * @return \pc\yii2\oauth2server\Server
-     * @throws \yii\base\InvalidConfigException
+     *
+     * @return object|Server
+     * @throws \ReflectionException
+     * @throws \yii\di\NotInstantiableException
+     * @throws InvalidConfigException
      */
     public function getServer()
     {
         if(!$this->has('server')) {
             $storages = [];
             foreach($this->storageMap as $key => $name) {
-                $storages[$key] = \Yii::$container->get($name);
+                $storages[$key] = Yii::$container->get($name);
             }
-            
+
             $grantTypes = [];
             foreach($this->grantTypes as $name => $options) {
                 if(!isset($storages[$name]) || empty($options['class'])) {
-                    throw new \yii\base\InvalidConfigException('Invalid grant types configuration.');
+                    throw new InvalidConfigException('Invalid grant types configuration.');
                 }
 
                 $class = $options['class'];
                 unset($options['class']);
 
-                $reflection = new \ReflectionClass($class);
+                $reflection = new ReflectionClass($class);
                 $config = array_merge([0 => $storages[$name]], [$options]);
 
                 $instance = $reflection->newInstanceArgs($config);
                 $grantTypes[$name] = $instance;
             }
             
-            $server = \Yii::$container->get(Server::className(), [
+            $server = Yii::$container->get(Server::className(), [
                 $this,
                 $storages,
                 [
@@ -111,18 +114,26 @@ class Module extends \yii\base\Module
         }
         return $this->get('server');
     }
-    
+
+    /**
+     * @return null|object
+     * @throws InvalidConfigException
+     */
     public function getRequest()
     {
-        if(!$this->has('request')) {
+        if (!$this->has('request') || !$this->get('request') instanceof Request) {
             $this->set('request', Request::createFromGlobals());
         }
         return $this->get('request');
     }
-    
+
+    /**
+     * @return null|object
+     * @throws InvalidConfigException
+     */
     public function getResponse()
     {
-        if(!$this->has('response')) {
+        if (!$this->has('response') || !$this->get('response') instanceof Response) {
             $this->set('response', new Response());
         }
         return $this->get('response');
@@ -130,12 +141,11 @@ class Module extends \yii\base\Module
 
     /**
      * Register translations for this module
-     * 
-     * @return array
+     * @throws \yii\base\InvalidConfigException
      */
     public function registerTranslations()
     {
-        if(!isset(Yii::$app->get('i18n')->translations['modules/oauth2/*'])) {
+        if (empty(Yii::$app->get('i18n')->translations['modules/oauth2/*'])) {
             Yii::$app->get('i18n')->translations['modules/oauth2/*'] = [
                 'class'    => PhpMessageSource::className(),
                 'basePath' => __DIR__ . '/messages',
